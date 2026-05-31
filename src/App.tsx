@@ -254,7 +254,7 @@ export default function App() {
               <div className="flex flex-wrap items-center justify-center gap-4 text-slate-500">
                 <div className="flex items-center gap-2">
                   <PhoneCall className="w-3.5 h-3.5 text-blue-500 inline" />
-                  <span>Bantuan Teknis: <strong>(0343) 741639</strong></span>
+                  <span>Bantuan Teknis: <strong>085732996700</strong></span>
                 </div>
                 <button
                   type="button"
