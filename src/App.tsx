@@ -10,7 +10,9 @@ import {
   fetchAllStudents, 
   fetchSchoolConfig, 
   bulkWriteStudents, 
-  deleteStudentDoc 
+  deleteStudentDoc,
+  fetchStudentByNisn,
+  auth
 } from "./firebase";
 import { 
   Search, 
@@ -69,30 +71,52 @@ export default function App() {
     async function initFirebaseData() {
       try {
         await testConnection();
-        // Load custom config from Firebase
+        // Load custom config from Firebase (allowed for unauthenticated users)
         const cloudConfig = await fetchSchoolConfig(SCHOOL_CONFIG);
         setSchoolConfig(cloudConfig);
         localStorage.setItem("SDN_SCHOOL_CONFIG", JSON.stringify(cloudConfig));
         
-        // Load students database
-        const cloudStudents = await fetchAllStudents();
-        if (cloudStudents.length === 0) {
-          // Firebase database is currently empty!
-          // We can use whatever students we currently have (loaded from localStorage/default)
-          await bulkWriteStudents(students);
-          localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(students));
-        } else {
-          // Loaded cloud database successfully
-          setStudents(cloudStudents);
-          localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(cloudStudents));
+        // If already signed in as admin, load students immediately
+        if (auth.currentUser) {
+          const cloudStudents = await fetchAllStudents();
+          if (cloudStudents.length === 0) {
+            await bulkWriteStudents(students);
+          } else {
+            setStudents(cloudStudents);
+            localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(cloudStudents));
+          }
         }
       } catch (err) {
-        console.error("Gagal inisialisasi basis data dari Cloud Firestore:", err);
+        console.error("Gagal inisialisasi konfigurasi kesiswaan:", err);
       } finally {
         setIsFirebaseSyncing(false);
       }
     }
     initFirebaseData();
+
+    // Listen for auth state changes to dynamically load full students list when signed in as admin
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      if (user) {
+        setIsFirebaseSyncing(true);
+        try {
+          const cloudStudents = await fetchAllStudents();
+          if (cloudStudents.length === 0) {
+            // First run setup by Admin
+            await bulkWriteStudents(students);
+            localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(students));
+          } else {
+            setStudents(cloudStudents);
+            localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(cloudStudents));
+          }
+        } catch (err) {
+          console.error("Gagal sinkronisasi data kesiswaan admin:", err);
+        } finally {
+          setIsFirebaseSyncing(false);
+        }
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const saveStudents = async (updated: Student[]) => {
@@ -127,7 +151,7 @@ export default function App() {
     }
   };
 
-  // Form Submission/Verification Process
+  // Form Submission/Verification Process via Direct Firestore Single Search (Zero-Trust Compliant)
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -152,25 +176,53 @@ export default function App() {
 
     setIsSubmitting(true);
 
-    // Simulate search with a beautiful realistic loading spinner index
-    setTimeout(() => {
-      const student = students.find(s => s.nisn === preparedNisn);
-      if (student) {
-        setSearchedStudent(student);
-        setErrorMsg("");
-        
-        // Trigger congratulations confetti if the student is successful (LULUS)
-        if (student.status.startsWith("LULUS")) {
-          setIsCelebrating(true);
-          // Stop confetti after 8 seconds to save resources
-          setTimeout(() => setIsCelebrating(false), 8000);
+    // Fetch the single document by NISN from Firestore (permitted for everyone under Firestore secure get rules)
+    fetchStudentByNisn(preparedNisn)
+      .then((cloudStudent) => {
+        if (cloudStudent) {
+          setSearchedStudent(cloudStudent);
+          setErrorMsg("");
+          
+          // Trigger congratulations confetti if the student is successful (LULUS)
+          if (cloudStudent.status.startsWith("LULUS")) {
+            setIsCelebrating(true);
+            setTimeout(() => setIsCelebrating(false), 8000);
+          }
+        } else {
+          // Fallback to local state just in case there is a connection glitch or they are using local data
+          const localStudent = students.find(s => s.nisn === preparedNisn);
+          if (localStudent) {
+            setSearchedStudent(localStudent);
+            setErrorMsg("");
+            if (localStudent.status.startsWith("LULUS")) {
+              setIsCelebrating(true);
+              setTimeout(() => setIsCelebrating(false), 8000);
+            }
+          } else {
+            setErrorMsg("Siswa dengan Nomor NISN tersebut tidak terdaftar di SDN Gajahbendo Beji. Coba periksa kembali digit angka atau hubungi Admin sekolah.");
+            setSearchedStudent(null);
+          }
         }
-      } else {
-        setErrorMsg("Siswa dengan Nomor NISN tersebut tidak terdaftar di SDN Gajahbendo Beji. Coba periksa kembali digit angka atau hubungi Admin sekolah.");
-        setSearchedStudent(null);
-      }
-      setIsSubmitting(false);
-    }, 600);
+      })
+      .catch((err) => {
+        console.error("Gagal mencari data dari Firestore:", err);
+        // Robust fallback to local cache
+        const localStudent = students.find(s => s.nisn === preparedNisn);
+        if (localStudent) {
+          setSearchedStudent(localStudent);
+          setErrorMsg("");
+          if (localStudent.status.startsWith("LULUS")) {
+            setIsCelebrating(true);
+            setTimeout(() => setIsCelebrating(false), 8000);
+          }
+        } else {
+          setErrorMsg("Gagal memproses pencarian (Koneksi bermasalah). Silakan periksa jaringan internet Anda.");
+          setSearchedStudent(null);
+        }
+      })
+      .finally(() => {
+        setIsSubmitting(false);
+      });
   };
 
   const handleResetSearch = () => {
