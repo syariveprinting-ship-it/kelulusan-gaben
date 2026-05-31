@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Student, SubjectGrade } from "../types";
 import { getAutomaticTeacherNote } from "../studentsData";
+import { loginAdminAnonymously, logoutAdmin } from "../firebase";
 import { 
   X, 
   Lock, 
@@ -88,14 +89,28 @@ export default function AdminPanel({ students, onSaveStudents, onClose, defaultD
     }
   };
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password === "admin123" || password === "gajahbendo2026") {
-      setIsAuthenticated(true);
-      setLoginError("");
+      try {
+        await loginAdminAnonymously();
+        setIsAuthenticated(true);
+        setLoginError("");
+      } catch (err) {
+        setLoginError("Gagal autentikasi kesiswaan cloud. Silakan coba kembali.");
+      }
     } else {
       setLoginError("Password salah! Silakan coba lagi.");
     }
+  };
+
+  const handleClose = async () => {
+    try {
+      await logoutAdmin();
+    } catch (e) {
+      console.error(e);
+    }
+    onClose();
   };
 
   const handleOpenAddForm = () => {
@@ -454,7 +469,7 @@ export default function AdminPanel({ students, onSaveStudents, onClose, defaultD
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-fade-in">
         <div className="bg-white rounded-3xl w-full max-w-md p-8 border border-slate-100 shadow-2xl relative">
           <button 
-            onClick={onClose}
+            onClick={handleClose}
             className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-50 transition-colors"
           >
             <X className="w-5 h-5" />
@@ -533,7 +548,7 @@ export default function AdminPanel({ students, onSaveStudents, onClose, defaultD
               <span>Reset Database</span>
             </button>
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="p-2.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
             >
               <X className="w-5 h-5" />

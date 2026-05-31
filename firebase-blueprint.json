@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "SubjectGrade": {
+      "title": "Subject Grade",
+      "description": "Score details of a specific subject",
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "string",
+          "description": "Complete subject name"
+        },
+        "code": {
+          "type": "string",
+          "description": "Short code of the subject"
+        },
+        "score": {
+          "type": "number",
+          "description": "Grade score from 0 to 100"
+        }
+      },
+      "required": ["subject", "code", "score"]
+    },
+    "Student": {
+      "title": "Student",
+      "description": "Class 6 student record with grades and graduation status",
+      "type": "object",
+      "properties": {
+        "nisn": {
+          "type": "string",
+          "description": "Nomor Induk Siswa Nasional, precisely 10 digit numbers"
+        },
+        "nis": {
+          "type": "string",
+          "description": "Nomor Induk Siswa"
+        },
+        "name": {
+          "type": "string",
+          "description": "Student full name"
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Optional URL to student profile photo"
+        },
+        "birthPlaceDate": {
+          "type": "string",
+          "description": "Birthplace and birthdate"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["LULUS", "LULUS DENGAN PUJIAN", "TIDAK LULUS"],
+          "description": "Graduation status"
+        },
+        "serialNumber": {
+          "type": "string",
+          "description": "Surat Keterangan Kelulusan number references"
+        },
+        "notes": {
+          "type": "string",
+          "description": "Advisory and mental development remarks from school"
+        },
+        "achievements": {
+          "type": "array",
+          "description": "List of achievements earned by the student"
+        },
+        "grades": {
+          "type": "array",
+          "description": "Detail subject grades list"
+        }
+      },
+      "required": ["nisn", "nis", "name", "birthPlaceDate", "status", "serialNumber", "grades"]
+    },
+    "SchoolConfig": {
+      "title": "School Config",
+      "description": "Configuration rules and details of the school",
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "School complete name"
+        },
+        "address": {
+          "type": "string",
+          "description": "School full address"
+        },
+        "village": {
+          "type": "string"
+        },
+        "district": {
+          "type": "string"
+        },
+        "regency": {
+          "type": "string"
+        },
+        "province": {
+          "type": "string"
+        },
+        "headmasterName": {
+          "type": "string"
+        },
+        "headmasterNip": {
+          "type": "string"
+        },
+        "releaseDate": {
+          "type": "string"
+        },
+        "announcementTime": {
+          "type": "string"
+        }
+      },
+      "required": ["name", "address", "headmasterName", "headmasterNip", "releaseDate", "announcementTime"]
+    }
+  },
+  "firestore": {
+    "students": {
+      "schema": "Student",
+      "description": "List of student records"
+    },
+    "config": {
+      "schema": "SchoolConfig",
+      "description": "Configuration documents, containing school settings"
+    }
+  }
+}

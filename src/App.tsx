@@ -1,10 +1,17 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import BackgroundDecoration from "./components/BackgroundDecoration";
 import Confetti from "./components/Confetti";
 import SKLSheet from "./components/SKLSheet";
 import AdminPanel from "./components/AdminPanel";
 import { SCHOOL_CONFIG, STUDENTS_DB } from "./studentsData";
-import { Student } from "./types";
+import { Student, SchoolConfig } from "./types";
+import { 
+  testConnection, 
+  fetchAllStudents, 
+  fetchSchoolConfig, 
+  bulkWriteStudents, 
+  deleteStudentDoc 
+} from "./firebase";
 import { 
   Search, 
   GraduationCap, 
@@ -17,21 +24,14 @@ import {
   AlertCircle, 
   FileCheck2,
   Users,
-  Lock
+  Lock,
+  CloudLightning
 } from "lucide-react";
 
 export default function App() {
-  const [students, setStudents] = useState<Student[]>(() => {
-    const saved = localStorage.getItem("SDN_STUDENTS_DB");
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    return STUDENTS_DB;
-  });
+  const [students, setStudents] = useState<Student[]>([]);
+  const [schoolConfig, setSchoolConfig] = useState<SchoolConfig>(SCHOOL_CONFIG);
+  const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [nisnInput, setNisnInput] = useState("");
@@ -40,13 +40,79 @@ export default function App() {
   const [isCelebrating, setIsCelebrating] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const saveStudents = (updated: Student[]) => {
-    setStudents(updated);
-    localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(updated));
-    // Keep the active search details updated if the student gets modified or deleted
-    if (searchedStudent) {
-      const live = updated.find(s => s.nisn === searchedStudent.nisn);
-      setSearchedStudent(live || null);
+  useEffect(() => {
+    async function initFirebaseData() {
+      try {
+        await testConnection();
+        // Load custom config from Firebase
+        const cloudConfig = await fetchSchoolConfig(SCHOOL_CONFIG);
+        setSchoolConfig(cloudConfig);
+        
+        // Load students database
+        const cloudStudents = await fetchAllStudents();
+        if (cloudStudents.length === 0) {
+          // Firebase database is currently empty!
+          // Check if the user already has data in their standard local storage (they inputted on PC)
+          const savedStr = localStorage.getItem("SDN_STUDENTS_DB");
+          let initialList = STUDENTS_DB;
+          if (savedStr) {
+            try {
+              const savedList = JSON.parse(savedStr);
+              if (Array.isArray(savedList) && savedList.length > 0) {
+                initialList = savedList;
+                console.log("Menemukan data lokal sebelumnya. Menyinkronkan ke Cloud Firestore...");
+              }
+            } catch (e) {
+              console.error(e);
+            }
+          }
+          // Write default/local records to the cloud database
+          await bulkWriteStudents(initialList);
+          setStudents(initialList);
+          localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(initialList));
+        } else {
+          // Loaded cloud database successfully
+          setStudents(cloudStudents);
+          localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(cloudStudents));
+        }
+      } catch (err) {
+        console.error("Gagal inisialisasi basis data dari Cloud Firestore:", err);
+      } finally {
+        setIsFirebaseLoading(false);
+      }
+    }
+    initFirebaseData();
+  }, []);
+
+  const saveStudents = async (updated: Student[]) => {
+    setIsSubmitting(true);
+    try {
+      // Find deleted records
+      const previousNisns = students.map(s => s.nisn);
+      const updatedNisns = updated.map(s => s.nisn);
+      const deletedNisns = previousNisns.filter(nisn => !updatedNisns.includes(nisn));
+      
+      // Execute deletions
+      for (const dNisn of deletedNisns) {
+        await deleteStudentDoc(dNisn);
+      }
+      
+      // Save updated and newly added student documents
+      await bulkWriteStudents(updated);
+      
+      setStudents(updated);
+      localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(updated));
+      
+      // Keep active search details updated
+      if (searchedStudent) {
+        const live = updated.find(s => s.nisn === searchedStudent.nisn);
+        setSearchedStudent(live || null);
+      }
+    } catch (e) {
+      console.error("Gagal mensinkronisasikan ke Firestore:", e);
+      alert("Koneksi internet bermasalah. Gagal menyimpan perubahan ke server cloud.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -103,6 +169,30 @@ export default function App() {
     setIsCelebrating(false);
   };
 
+  if (isFirebaseLoading) {
+    return (
+      <div className="relative min-h-screen flex flex-col items-center justify-center font-sans text-slate-800 bg-[#f8fafc]/50">
+        <BackgroundDecoration />
+        <div className="relative z-10 flex flex-col items-center max-w-md p-6 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-50 to-indigo-50 border border-blue-100 flex items-center justify-center mb-6 animate-pulse shadow-inner">
+            <GraduationCap className="w-8 h-8 text-[#1e40af]" />
+          </div>
+          <h3 className="text-lg font-bold text-[#1e3a8a] mb-2 uppercase tracking-widest font-sans">
+            Menghubungkan Server Cloud
+          </h3>
+          <p className="text-xs sm:text-sm text-slate-500/80 font-medium leading-relaxed max-w-xs">
+            Sedang mensinkronisasikan basis data kelulusan SDN Gajahbendo Beji dari Cloud Firestore...
+          </p>
+          <div className="mt-6 flex gap-1.5 justify-center">
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.3s]"></span>
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.15s]"></span>
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce"></span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="relative min-h-screen flex flex-col font-sans select-text select-none text-slate-800 pb-12 overflow-x-hidden">
       
@@ -124,7 +214,7 @@ export default function App() {
           <div className="w-full flex justify-center py-2">
             <SKLSheet 
               student={searchedStudent} 
-              school={SCHOOL_CONFIG} 
+              school={schoolConfig} 
               onBack={handleResetSearch} 
             />
           </div>
@@ -144,7 +234,7 @@ export default function App() {
                 Portal Kelulusan Resmi
               </h2>
               <h1 className="text-3xl sm:text-4.5xl md:text-5xl font-black text-[#1e3a8a] tracking-tight leading-tight mb-2 uppercase">
-                {SCHOOL_CONFIG.name}
+                {schoolConfig.name}
               </h1>
               <p className="text-blue-600/70 font-semibold text-sm sm:text-base max-w-xl mx-auto mt-2">
                 Selamat Datang di Sistem Informasi Pengumuman Kelulusan Kelas 6
@@ -204,7 +294,7 @@ export default function App() {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full py-4.5 bg-[#1e40af] hover:bg-[#1d4ed8] text-white rounded-2xl font-bold text-lg shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full py-4.5 bg-[#1e40af] hover:bg-[#1d4ed8] text-white rounded-2xl font-bold text-lg shadow-lg shadow-blue-200/50 transition-all active:scale-[0.98] flex items-center justify-center gap-2 cursor-pointer pt-4"
                   id="btn-search-nisn"
                 >
                   {isSubmitting ? (
@@ -249,7 +339,7 @@ export default function App() {
             {/* School Contact Footer Support */}
             <footer className="w-full text-center py-4 text-xs text-slate-500 flex flex-col md:flex-row items-center justify-between gap-4 border-t border-slate-200/50 mt-4">
               <p className="font-semibold text-slate-400">
-                &copy; 2026 {SCHOOL_CONFIG.name}. Kesiswaan & Kurikulum.
+                &copy; 2026 {schoolConfig.name}. Kesiswaan & Kurikulum.
               </p>
               <div className="flex flex-wrap items-center justify-center gap-4 text-slate-500">
                 <div className="flex items-center gap-2">
