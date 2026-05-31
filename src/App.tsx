@@ -29,9 +29,34 @@ import {
 } from "lucide-react";
 
 export default function App() {
-  const [students, setStudents] = useState<Student[]>([]);
-  const [schoolConfig, setSchoolConfig] = useState<SchoolConfig>(SCHOOL_CONFIG);
-  const [isFirebaseLoading, setIsFirebaseLoading] = useState(true);
+  const [students, setStudents] = useState<Student[]>(() => {
+    const saved = localStorage.getItem("SDN_STUDENTS_DB");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return STUDENTS_DB;
+  });
+
+  const [schoolConfig, setSchoolConfig] = useState<SchoolConfig>(() => {
+    const saved = localStorage.getItem("SDN_SCHOOL_CONFIG");
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return SCHOOL_CONFIG;
+  });
+
+  const [isFirebaseSyncing, setIsFirebaseSyncing] = useState(true);
 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [nisnInput, setNisnInput] = useState("");
@@ -47,29 +72,15 @@ export default function App() {
         // Load custom config from Firebase
         const cloudConfig = await fetchSchoolConfig(SCHOOL_CONFIG);
         setSchoolConfig(cloudConfig);
+        localStorage.setItem("SDN_SCHOOL_CONFIG", JSON.stringify(cloudConfig));
         
         // Load students database
         const cloudStudents = await fetchAllStudents();
         if (cloudStudents.length === 0) {
           // Firebase database is currently empty!
-          // Check if the user already has data in their standard local storage (they inputted on PC)
-          const savedStr = localStorage.getItem("SDN_STUDENTS_DB");
-          let initialList = STUDENTS_DB;
-          if (savedStr) {
-            try {
-              const savedList = JSON.parse(savedStr);
-              if (Array.isArray(savedList) && savedList.length > 0) {
-                initialList = savedList;
-                console.log("Menemukan data lokal sebelumnya. Menyinkronkan ke Cloud Firestore...");
-              }
-            } catch (e) {
-              console.error(e);
-            }
-          }
-          // Write default/local records to the cloud database
-          await bulkWriteStudents(initialList);
-          setStudents(initialList);
-          localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(initialList));
+          // We can use whatever students we currently have (loaded from localStorage/default)
+          await bulkWriteStudents(students);
+          localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(students));
         } else {
           // Loaded cloud database successfully
           setStudents(cloudStudents);
@@ -78,7 +89,7 @@ export default function App() {
       } catch (err) {
         console.error("Gagal inisialisasi basis data dari Cloud Firestore:", err);
       } finally {
-        setIsFirebaseLoading(false);
+        setIsFirebaseSyncing(false);
       }
     }
     initFirebaseData();
@@ -168,30 +179,6 @@ export default function App() {
     setErrorMsg("");
     setIsCelebrating(false);
   };
-
-  if (isFirebaseLoading) {
-    return (
-      <div className="relative min-h-screen flex flex-col items-center justify-center font-sans text-slate-800 bg-[#f8fafc]/50">
-        <BackgroundDecoration />
-        <div className="relative z-10 flex flex-col items-center max-w-md p-6 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-50 to-indigo-50 border border-blue-100 flex items-center justify-center mb-6 animate-pulse shadow-inner">
-            <GraduationCap className="w-8 h-8 text-[#1e40af]" />
-          </div>
-          <h3 className="text-lg font-bold text-[#1e3a8a] mb-2 uppercase tracking-widest font-sans">
-            Menghubungkan Server Cloud
-          </h3>
-          <p className="text-xs sm:text-sm text-slate-500/80 font-medium leading-relaxed max-w-xs">
-            Sedang mensinkronisasikan basis data kelulusan SDN Gajahbendo Beji dari Cloud Firestore...
-          </p>
-          <div className="mt-6 flex gap-1.5 justify-center">
-            <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.3s]"></span>
-            <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce [animation-delay:-0.15s]"></span>
-            <span className="w-2 h-2 rounded-full bg-blue-600 animate-bounce"></span>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="relative min-h-screen flex flex-col font-sans select-text select-none text-slate-800 pb-12 overflow-x-hidden">
@@ -336,11 +323,24 @@ export default function App() {
 
             </div>
 
-            {/* School Contact Footer Support */}
+             {/* School Contact Footer Support */}
             <footer className="w-full text-center py-4 text-xs text-slate-500 flex flex-col md:flex-row items-center justify-between gap-4 border-t border-slate-200/50 mt-4">
-              <p className="font-semibold text-slate-400">
-                &copy; 2026 {schoolConfig.name}. Kesiswaan & Kurikulum.
-              </p>
+              <div className="flex flex-col items-center md:items-start gap-1">
+                <p className="font-semibold text-slate-400">
+                  &copy; 2026 {schoolConfig.name}. Kesiswaan & Kurikulum.
+                </p>
+                {isFirebaseSyncing ? (
+                  <span className="inline-flex items-center gap-1.5 text-[10px] text-blue-500 font-semibold bg-blue-50/50 px-2.5 py-0.5 rounded-full border border-blue-100/40 animate-pulse">
+                    <span className="w-1 h-1 rounded-full bg-blue-500 animate-ping"></span>
+                    Menghubungkan cloud kesiswaan...
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 font-semibold bg-emerald-50/40 px-2.5 py-0.5 rounded-full border border-emerald-100/25">
+                    <CloudLightning className="w-3 h-3 text-emerald-500 animate-pulse" />
+                    Cloud Aktif & Tersinkronisasi
+                  </span>
+                )}
+              </div>
               <div className="flex flex-wrap items-center justify-center gap-4 text-slate-500">
                 <div className="flex items-center gap-2">
                   <PhoneCall className="w-3.5 h-3.5 text-blue-500 inline" />
