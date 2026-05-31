@@ -14,13 +14,13 @@ service cloud.firestore {
     }
     
     match /students/{nisn} {
-      allow get: if isValidId(nisn);
-      allow list, write: if isSignedIn();
+      allow read: if true;
+      allow write: if isSignedIn();
     }
     
     match /config/{configId} {
-      allow get: if isValidId(configId);
-      allow list, write: if isSignedIn();
+      allow read: if true;
+      allow write: if isSignedIn();
     }
   }
 }

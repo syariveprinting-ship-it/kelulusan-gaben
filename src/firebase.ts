@@ -174,8 +174,13 @@ export async function fetchSchoolConfig(fallback: SchoolConfig): Promise<SchoolC
     if (docSnap.exists()) {
       return docSnap.data() as SchoolConfig;
     } else {
-      // Inception payload: store fallback in firestore on initial setup
-      await setDoc(doc(db, "config", "school"), fallback);
+      // Inception payload: store fallback in firestore on initial setup if permitted (e.g. if admin logs in first)
+      try {
+        await setDoc(doc(db, "config", "school"), fallback);
+      } catch (writeErr) {
+        // Log locally but don't fail boot -- non-admin devices won't have write permissions
+        console.log("Not writing fallback config to cloud (requires admin write permission):", writeErr);
+      }
       return fallback;
     }
   } catch (error) {

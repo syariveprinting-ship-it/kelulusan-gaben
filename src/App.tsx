@@ -76,18 +76,19 @@ export default function App() {
         setSchoolConfig(cloudConfig);
         localStorage.setItem("SDN_SCHOOL_CONFIG", JSON.stringify(cloudConfig));
         
-        // If already signed in as admin, load students immediately
-        if (auth.currentUser) {
-          const cloudStudents = await fetchAllStudents();
-          if (cloudStudents.length === 0) {
+        // Fetch student database for all devices (including mobile HP) on initial boot to keep in sync
+        const cloudStudents = await fetchAllStudents();
+        if (cloudStudents.length > 0) {
+          setStudents(cloudStudents);
+          localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(cloudStudents));
+        } else {
+          // If Firestore is empty (e.g., initial boot/reset), and admin is logged in
+          if (auth.currentUser) {
             await bulkWriteStudents(students);
-          } else {
-            setStudents(cloudStudents);
-            localStorage.setItem("SDN_STUDENTS_DB", JSON.stringify(cloudStudents));
           }
         }
       } catch (err) {
-        console.error("Gagal inisialisasi konfigurasi kesiswaan:", err);
+        console.error("Gagal inisialisasi basis data kesiswaan:", err);
       } finally {
         setIsFirebaseSyncing(false);
       }
